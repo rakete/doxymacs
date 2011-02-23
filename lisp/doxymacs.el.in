@@ -1019,9 +1019,11 @@ completion list."
          (save-excursion
            (if (eq completion-list nil)
                ;;Build our completion list if not already done
-               (if doxymacs-use-external-xml-parser
-                   (doxymacs-fill-completion-list-with-external-parser f)
-                 (doxymacs-fill-completion-list-with-internal-parser f)))
+               (progn
+                 (if doxymacs-use-external-xml-parser
+                     (doxymacs-fill-completion-list-with-external-parser f)
+                   (doxymacs-fill-completion-list-with-internal-parser f))
+                 (setq completion-list (doxymacs-filename-to-completion-list f))))
            (let* ((tryed-completion (try-completion (doxymacs-symbol-near-point) completion-list))
                   (symbol (cond ((eq tryed-completion t)
                                  ;; Only one completion found
