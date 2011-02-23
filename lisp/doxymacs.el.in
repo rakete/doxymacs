@@ -986,87 +986,62 @@ completion list."
 					   (point)))))
 	nil))))
 
-(defun doxymacs-lookup (symbol &optional filename)
+(defun doxymacs-assocl (key alist)
+  (let ((r '()))
+    (dolist (x alist r)
+      (if (string-match-p key (car x))
+          (add-to-list 'r x)))))
+
+(defun doxymacs-sort-alist (alist f)
+  (let ((sorted-keys (sort (mapcar 'car alist) f))
+        (sorted-alist-copy '()))
+    (dolist (x sorted-keys sorted-alist-copy)
+      (add-to-list 'sorted-alist-copy (assoc x alist) t))))
+
+(defun doxymacs-concatl (&rest sequences-sequence)
+  (let ((r '()))
+    (mapc (lambda (l1)
+            (mapc (lambda (l2)
+                    (mapc (lambda (x)
+                            (add-to-list 'r x t)) l2))
+                  l1))
+          sequences-sequence)
+    r))
+
+(defun doxymacs-lookup (symbol &optional completions filename)
   "Look up the symbol under the cursor in Doxygen generated documentation."
   (interactive
    (let* ((f (buffer-file-name))
-	  (completion-list (doxymacs-filename-to-completion-list f)))
+          (completion-list (doxymacs-filename-to-completion-list f)))
      (if (eq f nil)
-	 (error "Current buffer has no file name associated with it.")
+         (error "Current buffer has no file name associated with it.")
        (progn
-	 (save-excursion
-	   (if (eq completion-list nil)
-	       ;;Build our completion list if not already done
-	       (if doxymacs-use-external-xml-parser
-		   (doxymacs-fill-completion-list-with-external-parser f)
-		 (doxymacs-fill-completion-list-with-internal-parser f)))
-	   (let ((symbol (completing-read
-			  "Look up: "
-			  completion-list nil nil
-			  (doxymacs-symbol-near-point)))
-		 (filename f))
-	     (list symbol filename)))))))
-  (let ((url (doxymacs-symbol-completion
-	      symbol
-	      (doxymacs-filename-to-completion-list filename))))
-    (if url
-	(doxymacs-display-url (doxymacs-filename-to-url filename) url))))
-
-(defun doxymacs-display-completions (initial collection &optional pred)
-  "Display available completions."
-  (let ((matches (all-completions initial collection pred)))
-    ;; FIXME - Is this the proper way of doing this? Seems to work, but...
-    (set-buffer (format " *Minibuf-%d*"
-			;; Here's a kludge.
-			(if (featurep 'xemacs)
-			    (minibuffer-depth)
-			  (1+ (minibuffer-depth)))))
-    (with-output-to-temp-buffer doxymacs-completion-buffer
-      (display-completion-list (sort matches 'string-lessp)))))
-
-(defun doxymacs-symbol-completion (initial collection &optional pred)
-  "Do completion for given symbol."
-  (let ((completion (try-completion initial collection pred)))
-    (cond ((eq completion t)
-           ;; Only one completion found.  Validate it.
-           (doxymacs-validate-symbol-completion initial collection pred))
-          ((null completion)
-           ;; No completion found
-           (message "No documentation for '%s'" initial)
-           (ding))
-          (t
-           ;; There is more than one possible completion
-	   (doxymacs-display-completions initial collection pred)
-           (let ((completion (completing-read
-			      "Select: "
-			      collection pred nil initial)))
-             (delete-window (get-buffer-window doxymacs-completion-buffer))
-             (if completion
-                 ;; If there is a completion, validate it.
-                 (doxymacs-validate-symbol-completion
-		  completion collection pred)
-               ;; Otherwise just return nil
-               nil))))))
-
-(defun doxymacs-validate-symbol-completion (initial collection &optional pred)
-  "Checks whether the symbol (initial) has multiple descriptions, and if so
-continue completion on those descriptions.  In the end it returns the URL for
-the completion or nil if canceled by the user."
-  (let ((new-collection (cdr (assoc initial collection))))
-    (if (> (length new-collection) 1)
-        ;; More than one
-        (doxymacs-description-completion "" new-collection pred)
-      ;; Only one, return the URL
-      (cdar new-collection))))
-
-(defun doxymacs-description-completion (initial collection &optional pred)
-  "Do completion for given description."
-  (doxymacs-display-completions initial collection pred)
-  (let ((completion (completing-read "Select: " collection pred nil initial)))
-    (delete-window (get-buffer-window doxymacs-completion-buffer))
-    (if completion
-        ;; Return the URL if there is a completion
-        (cdr (assoc completion collection)))))
+         (save-excursion
+           (if (eq completion-list nil)
+               ;;Build our completion list if not already done
+               (if doxymacs-use-external-xml-parser
+                   (doxymacs-fill-completion-list-with-external-parser f)
+                 (doxymacs-fill-completion-list-with-internal-parser f)))
+           (let* ((tryed-completion (try-completion (doxymacs-symbol-near-point) completion-list))
+                  (symbol (cond ((eq tryed-completion t)
+                                 ;; Only one completion found
+                                 (doxymacs-symbol-near-point))
+                                ((null tryed-completion)
+                                 ;; No completion found
+                                 (error "No documentation for '%s'" (doxymacs-symbol-near-point)))
+                                (t tryed-completion)))
+                  (completions (cond ((eq tryed-completion t)
+                                      (all-completions symbol completion-list))
+                                     ((null tryed-completion)
+                                      nil)
+                                     (t (all-completions symbol completion-list))))
+                  (filename f))
+             (list symbol (sort completions 'string-lessp) filename))
+           )))))
+  (let ((collection (doxymacs-filename-to-completion-list filename)))
+    (let* ((ac (doxymacs-sort-alist (doxymacs-concatl (mapcar 'cdr (doxymacs-assocl symbol collection))) 'string-lessp))
+           (url (cdr (assoc (completing-read "Select: " ac nil t nil nil (caar ac)) ac)))) ;; (ido-completing-read "Select:" (mapcar 'car ac)) ac)))
+      (doxymacs-display-url (doxymacs-filename-to-url filename) url))))
 
 ;;This is mostly a convenience function for the user
 (defun doxymacs-rescan-tags ()
